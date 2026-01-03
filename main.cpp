@@ -1,70 +1,101 @@
 #include "kernel.h"
-#include <cuda_runtime.h>
+#include <chrono>
 #include <iostream>
 #include <opencv2/opencv.hpp>
 
-#define checkCuda(ans)                                                         \
-	{                                                                          \
-		gpuAssert((ans), __FILE__, __LINE__);                                  \
-	}
+enum PipelineMode {
+	MODE_ORIGINAL = 0,
+	MODE_GRAYSCALE = 1,
+	MODE_SOBEL = 2,
+	MODE_INVERT = 3,
+	MODE_BLUR = 4
+};
 
-inline void gpuAssert(cudaError_t code, const char *file, int line,
-					  bool abort = true) {
-	if (code != cudaSuccess) {
-		fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(code), file,
-				line);
-		if (abort)
-			exit(code);
-	}
-}
-
-int main(int argc, char **argv) {
+int main(int argc, char *argv[]) {
 	if (argc != 2) {
-		std::cerr << "Usage: ./cuda_vision <image_path>" << std::endl;
+		std::cerr << "Usage: " << argv[0] << " <video_path>\n";
+		return 1;
+	}
+
+	std::string videoPath = argv[1];
+	cv::VideoCapture cap(videoPath);
+
+	if (!cap.isOpened()) {
+		std::cerr << "Error: Could not open video file at " << videoPath
+				  << std::endl;
 		return -1;
 	}
 
-	cv::Mat input_full = cv::imread(argv[1], cv::IMREAD_GRAYSCALE);
-	if (input_full.empty()) {
-		std::cerr << "Error: Could not open image!" << std::endl;
-		return -1;
-	}
-	cv::Mat output_full = cv::Mat::zeros(input_full.size(), input_full.type());
+	int width = (int)cap.get(cv::CAP_PROP_FRAME_WIDTH);
+	int height = (int)cap.get(cv::CAP_PROP_FRAME_HEIGHT);
+	size_t graySize = width * height * sizeof(unsigned char);
 
-	auto start = std::chrono::high_resolution_clock::now();
+	std::cout << "Processing 4K Video: " << width << "x" << height << std::endl;
 
-	// INFO: CUDA kernel
-	launch_sobel(input_full.data, output_full.data, input_full.cols,
-				 input_full.rows);
+	unsigned char *d_in, *d_out;
+	allocate_buffers(&d_in, &d_out, graySize);
 
-	cudaDeviceSynchronize();
-	auto end = std::chrono::high_resolution_clock::now();
-	std::chrono::duration<double, std::milli> ms = end - start;
-	std::cout << "Kernel Execution Time: " << ms.count() << " ms" << std::endl;
+	cv::Mat frame, grayFrame, outputFrame_Gray, outputFrame_Final;
+	outputFrame_Gray = cv::Mat::zeros(height, width, CV_8UC1);
 
-	cv::namedWindow("Original", cv::WINDOW_AUTOSIZE);
-	cv::namedWindow("Sobel Edge Detection", cv::WINDOW_AUTOSIZE);
+	cv::namedWindow("CUDA 4K Pipeline", cv::WINDOW_NORMAL);
+	cv::resizeWindow("CUDA 4K Pipeline", 1280, 720);
 
-	cv::moveWindow("Original", 100, 100);
-	cv::moveWindow("Sobel Edge Detection", 700, 100);
+	int currentMode = MODE_GRAYSCALE;
 
-	cv::imshow("Original", input_full);
-	cv::imshow("Sobel Edge Detection", output_full);
-
-	std::cout << "Windows active. Press 'q' or ESC to exit safely."
-			  << std::endl;
 	while (true) {
-		int key = cv::waitKey(1);
-		if (key == 27 || key == 'q')
-			break;
-
-		if (cv::getWindowProperty("Original", cv::WND_PROP_VISIBLE) < 1 ||
-			cv::getWindowProperty("Sobel Edge Detection",
-								  cv::WND_PROP_VISIBLE) < 1) {
-			break;
+		cap >> frame;
+		if (frame.empty()) {
+			cap.set(cv::CAP_PROP_POS_FRAMES, 0);
+			continue;
 		}
+
+		if (currentMode == MODE_ORIGINAL) {
+			outputFrame_Final = frame;
+		} else {
+			cv::cvtColor(frame, grayFrame, cv::COLOR_BGR2GRAY);
+			upload_to_gpu(d_in, grayFrame.data, graySize);
+
+			auto start = std::chrono::high_resolution_clock::now();
+
+			if (currentMode == MODE_SOBEL) {
+				launch_sobel_exec(d_in, d_out, width, height);
+			} else if (currentMode == MODE_BLUR) {
+				launch_blur_exec(d_in, d_out, width, height);
+			} else if (currentMode == MODE_INVERT) {
+				launch_invert_exec(d_in, d_out, width, height);
+			} else {
+				launch_copy_exec(d_in, d_out, width, height);
+			}
+
+			download_from_gpu(outputFrame_Gray.data, d_out, graySize);
+
+			auto end = std::chrono::high_resolution_clock::now();
+			std::chrono::duration<double, std::milli> ms = end - start;
+
+			cv::cvtColor(outputFrame_Gray, outputFrame_Final,
+						 cv::COLOR_GRAY2BGR);
+
+			cv::putText(outputFrame_Final, std::to_string(ms.count()) + " ms",
+						cv::Point(50, 150), cv::FONT_HERSHEY_SIMPLEX, 2.0,
+						cv::Scalar(0, 255, 0), 4);
+		}
+
+		std::string modeNames[] = {"ORIGINAL (RGB)", "GRAYSCALE", "SOBEL",
+								   "INVERT", "GAUSSIAN BLUR"};
+		cv::putText(outputFrame_Final, "MODE: " + modeNames[currentMode],
+					cv::Point(50, 70), cv::FONT_HERSHEY_SIMPLEX, 2.0,
+					cv::Scalar(0, 255, 255), 4);
+
+		cv::imshow("CUDA 4K Pipeline", outputFrame_Final);
+
+		char key = (char)cv::waitKey(1);
+		if (key == 'q')
+			break;
+		if (key >= '0' && key <= '4')
+			currentMode = (PipelineMode)(key - '0');
 	}
 
-	cv::destroyAllWindows();
+	free_buffers(d_in, d_out);
 	return 0;
 }
