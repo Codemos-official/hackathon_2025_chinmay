@@ -1,3 +1,5 @@
 CompileFlags:
   Add:
+    - -std=c++17
     - -I/usr/include/opencv4
+    - -I/opt/cuda/include
