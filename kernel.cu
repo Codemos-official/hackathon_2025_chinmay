@@ -41,7 +41,9 @@ __global__ void sobel_kernel(unsigned char *input, unsigned char *output,
 
 		float magnitude = sqrtf(Gx * Gx + Gy * Gy);
 
-		output[y * width + x] = (magnitude > threshold) ? 255 : 0;
+		float normalized = magnitude / threshold;
+		normalized = fminf(normalized, 1.0f);
+		output[y * width + x] = (unsigned char)(normalized * 255.0f);
 	}
 }
 
