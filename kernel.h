@@ -11,7 +11,7 @@ void upload_to_gpu(unsigned char *d_in, unsigned char *h_in, size_t size);
 void download_from_gpu(unsigned char *h_out, unsigned char *d_out, size_t size);
 
 void launch_sobel_exec(unsigned char *d_in, unsigned char *d_out, int width,
-					   int height);
+					   int height, int threshold);
 void launch_blur_exec(unsigned char *d_in, unsigned char *d_out, int width,
 					  int height);
 void launch_invert_exec(unsigned char *d_in, unsigned char *d_out, int width,

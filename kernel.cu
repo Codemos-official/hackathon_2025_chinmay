@@ -22,7 +22,7 @@ __constant__ float gaussian_5x5[25] = {
 	0.059, 0.013, 0.003, 0.013, 0.022, 0.013, 0.003};
 
 __global__ void sobel_kernel(unsigned char *input, unsigned char *output,
-							 int width, int height) {
+							 int width, int height, int threshold) {
 	int x = blockIdx.x * blockDim.x + threadIdx.x;
 	int y = blockIdx.y * blockDim.y + threadIdx.y;
 
@@ -39,8 +39,9 @@ __global__ void sobel_kernel(unsigned char *input, unsigned char *output,
 			input[(y + 1) * width + (x - 1)] + 2 * input[(y + 1) * width + x] +
 			input[(y + 1) * width + (x + 1)];
 
-		output[y * width + x] =
-			(unsigned char)fminf(255.0f, sqrtf(Gx * Gx + Gy * Gy));
+		float magnitude = sqrtf(Gx * Gx + Gy * Gy);
+
+		output[y * width + x] = (magnitude > threshold) ? 255 : 0;
 	}
 }
 
@@ -102,10 +103,11 @@ void download_from_gpu(unsigned char *h_out, unsigned char *d_out,
 
 // launcher execs
 void launch_sobel_exec(unsigned char *d_in, unsigned char *d_out, int width,
-					   int height) {
+					   int height, int threshold) {
 	dim3 blockSize(16, 16);
 	dim3 gridSize((width + 15) / 16, (height + 15) / 16);
-	sobel_kernel<<<gridSize, blockSize>>>(d_in, d_out, width, height);
+	sobel_kernel<<<gridSize, blockSize>>>(d_in, d_out, width, height,
+										  threshold);
 }
 
 void launch_blur_exec(unsigned char *d_in, unsigned char *d_out, int width,
