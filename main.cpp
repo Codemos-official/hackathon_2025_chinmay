@@ -58,7 +58,8 @@ int main(int argc, char *argv[]) {
 	cv::resizeWindow("CUDA Pipeline", 1280, 720);
 
 	int currentMode = MODE_GRAYSCALE;
-	int threshold = 110;
+	int threshold = 200;
+	float strength = 1.0f;
 
 	while (true) {
 		if (isImage) {
@@ -82,7 +83,8 @@ int main(int argc, char *argv[]) {
 			if (currentMode == MODE_SOBEL)
 				launch_sobel_exec(d_in, d_out, width, height, threshold);
 			else if (currentMode == MODE_BLUR)
-				launch_blur_exec(d_in, d_out, width, height);
+				launch_blur_exec(d_in, d_out, width, height, threshold,
+								 strength);
 			else if (currentMode == MODE_INVERT)
 				launch_invert_exec(d_in, d_out, width, height);
 			else
@@ -112,6 +114,12 @@ int main(int argc, char *argv[]) {
 						cv::Point(50, 220), cv::FONT_HERSHEY_SIMPLEX, 1.5,
 						cv::Scalar(255, 0, 255), 3);
 		}
+		if (currentMode == MODE_BLUR) {
+			cv::putText(outputFrame_Final,
+						"STRENGTH: " + std::to_string(strength),
+						cv::Point(50, 220), cv::FONT_HERSHEY_SIMPLEX, 1.5,
+						cv::Scalar(255, 50, 155), 3);
+		}
 
 		cv::imshow("CUDA Pipeline", outputFrame_Final);
 
@@ -120,6 +128,10 @@ int main(int argc, char *argv[]) {
 			threshold = std::min(threshold + 5, 255);
 		else if (key == 's')
 			threshold = std::max(threshold - 5, 0);
+		else if (key == 'a')
+			strength = std::fmaxf(strength - 0.1f, 1.0f);
+		else if (key == 'd')
+			strength = std::fminf(strength + 0.1f, 5.0f);
 		if (key == 'q' || key == 27)
 			break;
 		if (key >= '0' && key <= '4')

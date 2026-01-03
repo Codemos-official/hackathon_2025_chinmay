@@ -13,7 +13,7 @@ void download_from_gpu(unsigned char *h_out, unsigned char *d_out, size_t size);
 void launch_sobel_exec(unsigned char *d_in, unsigned char *d_out, int width,
 					   int height, int threshold);
 void launch_blur_exec(unsigned char *d_in, unsigned char *d_out, int width,
-					  int height);
+					  int height, int threshold, int strength);
 void launch_invert_exec(unsigned char *d_in, unsigned char *d_out, int width,
 						int height);
 void launch_copy_exec(unsigned char *d_in, unsigned char *d_out, int width,

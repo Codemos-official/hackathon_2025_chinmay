@@ -49,7 +49,7 @@ __global__ void sobel_kernel(unsigned char *input, unsigned char *output,
 
 __global__ void gaussian_blur_kernel(unsigned char *input,
 									 unsigned char *output, int width,
-									 int height) {
+									 int height, int threshold, int strength) {
 	int x = blockIdx.x * blockDim.x + threadIdx.x;
 	int y = blockIdx.y * blockDim.y + threadIdx.y;
 
@@ -62,7 +62,15 @@ __global__ void gaussian_blur_kernel(unsigned char *input,
 				blur_val += weight * input[(y + i) * width + (x + j)];
 			}
 		}
-		output[y * width + x] = (unsigned char)blur_val;
+		float center = (float)input[y * width + x];
+
+		// LERP: result = (1 - s) * original + (s * blurred)
+		// If strength is 0, it's the original image.
+		// If strength is 1, it's the full Gaussian blur.
+		float final_val = (1.0f - strength) * center + (strength * blur_val);
+
+		output[y * width + x] =
+			(unsigned char)fminf(fmaxf(final_val, 0.0f), 255.0f);
 	}
 }
 
@@ -113,10 +121,11 @@ void launch_sobel_exec(unsigned char *d_in, unsigned char *d_out, int width,
 }
 
 void launch_blur_exec(unsigned char *d_in, unsigned char *d_out, int width,
-					  int height) {
+					  int height, int threshold, int strength) {
 	dim3 blockSize(16, 16);
 	dim3 gridSize((width + 15) / 16, (height + 15) / 16);
-	gaussian_blur_kernel<<<gridSize, blockSize>>>(d_in, d_out, width, height);
+	gaussian_blur_kernel<<<gridSize, blockSize>>>(d_in, d_out, width, height,
+												  threshold, strength);
 }
 
 void launch_invert_exec(unsigned char *d_in, unsigned char *d_out, int width,
